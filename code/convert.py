@@ -4,6 +4,7 @@
 
 #  import sys
 import re
+from copy import deepcopy
 
 def is_empty_line(line):
     return len(line) == 0
@@ -13,9 +14,9 @@ def get_property_line(line):
     return (line[:split].strip(),line[split+1:].strip())
 
 def starts_with_heading(line):
-    return line[0] == '['
+    return len(line) != 0 and line[0] == '['
 
-def get_part_heading(line):
+def get_section_heading(line):
     begbr = line.index('[')
     endbr = line.index(']')
     name = line[begbr+1:endbr]
@@ -36,7 +37,7 @@ def new_nonempty_line():
             break
     return line
 
-class Part:
+class Section:
     def __init__(self, name):
         self.name = name
         self.lines = []
@@ -44,20 +45,66 @@ class Part:
     def add_line(self, line):
         self.lines.append(line)
 
+class Chord:
+    def __init__(self, symbols):
+        self.main = ""
+        state = 0
+        for (i,c) in enumerate(symbols):
+            if state == 0:
+                # must start with the main chord name
+                if c in ['C','D','E','F','G','A','B']:
+                    state += 1
+                    continue
+                break # fail
+            elif state == 1:
+                # may contain sharp or flat
+                if c in ['#','b']:
+                    pass
+                state += 1
+            elif state == 2:
+                # may contain minor
+                if c in ['m']:
+                    pass
+                state += 1
+            elif state == 3:
+                # may contain additional modifiers
+                if symbols[i:i+3] in ['maj','add','sus','dim','aug']:
+                    pass
+                state += 1
+            elif state == 4:
+                # may contain extra numbers
+                if symbols[i:] in ['6','7','6/9','5','11','13']:
+                    pass
+                state += 1
+
+
+class ChordLine:
+    def __init__(self, line):
+        pass
+
 class Song:
     def __init__(self):
         self.properties = {}
-        self.parts = []
+        self.sections = []
+        self.error = None
+        self.name_to_section_idx = {}
 
     def add_property(self, key, value):
         self.properties[key] = value
 
-    def add_part(self, name, optional_chords):
+    def add_section(self, name, optional_chords):
         # todo optional_chords
-        self.parts.append(Part(name))
+        self.name_to_section_idx[name] = len(self.sections)
+        self.sections.append(Section(name))
+
+    def repeat_section(self, name):
+        if name in self.name_to_section_idx:
+            self.sections.append(deepcopy(self.sections[self.name_to_section_idx[name]]))
+            return True
+        return False
 
     def add_line(self, line):
-        self.parts[-1].add_line(line)
+        self.sections[-1].add_line(line)
 
 def is_link(line):
     return line[:4] == 'http'
@@ -68,7 +115,16 @@ def make_link(name, link):
 def make_property(name, value):
     return f'<span>{name}: {value}</span>'
 
+def print_parse_error(song):
+    html_string = []
+    html_string.append('<html>')
+    html_string.append(song.error)
+    html_string.append('</html>')
+    return '\n'.join(html_string)
+
 def song_to_html(song):
+    if song.error:
+        return print_parse_error(song)
     html_string = []
     html_string.append('<html>')
     html_string.append('<ul>')
@@ -81,9 +137,9 @@ def song_to_html(song):
         html_string.append('</li>')
     html_string.append('</ul>')
     html_string.append('<pre>')
-    for part in song.parts:
-        html_string.append(f'[{part.name}]')
-        for line in part.lines:
+    for section in song.sections:
+        html_string.append(f'[{section.name}]')
+        for line in section.lines:
             html_string.append(f'{line}')
     html_string.append('</pre>')
     html_string.append('</html>')
@@ -99,14 +155,21 @@ def parse_song_from_tab():
                 break
             (key, value) = get_property_line(line)
             song.add_property(key, value)
-        # process song parts (verse, chorus, etc.)
+        # process song sections (verse, chorus, etc.)
         line = new_nonempty_line()
         while True:
-            (name, optional_chords) = get_part_heading(line)
-            song.add_part(name, optional_chords)
-            # process part text
+            # process section name
+            (name, optional_chords) = get_section_heading(line)
+            repeat_key = 'repeat '
+            if name[:len(repeat_key)] == repeat_key:
+                name = name[len(repeat_key):]
+                if song.repeat_section(name):
+                    line = new_nonempty_line()
+                    continue
+            song.add_section(name, optional_chords)
+            # process section text
             while True:
-                line = new_nonempty_line()
+                line = input()
                 if starts_with_heading(line):
                     break
                 if is_chord_line(line):
@@ -115,7 +178,12 @@ def parse_song_from_tab():
                 else:
                     song.add_line(line)
     except EOFError:
-        pass
+        # remove extra newlines at the end
+        if len(song.sections) != 0:
+            while len(song.sections[-1].lines) != 0 and len(song.sections[-1].lines[-1]) == 0:
+                song.sections[-1].lines.pop()
+    except ValueError:
+        song.error = "could not parse correctly"
     return song
 
 def main():
