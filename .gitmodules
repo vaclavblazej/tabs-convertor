@@ -1,0 +1,3 @@
+[submodule "tabs"]
+	path = tabs
+	url = git@github.com:vaclavblazej/tabs.git
