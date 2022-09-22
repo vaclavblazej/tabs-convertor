@@ -5,9 +5,39 @@
 #  import sys
 import re
 from copy import deepcopy
+import traceback
+
+class ConError(Exception):
+    pass
+
+class Input:
+    def __init__(self):
+        self.lines = []
+        self.idx = 0
+        try:
+            while True:
+                self.lines.append(input())
+        except EOFError:
+            pass
+
+    def next_line(self):
+        if self.idx == len(self.lines):
+            raise ConError()
+        res = self.lines[self.idx]
+        self.idx += 1
+        return res
+
+    def get_all_input(self):
+        return '\n'.join(self.lines)
+
+inputstream = Input()
+
 
 def is_empty_line(line):
     return len(line) == 0
+
+def is_property_line(line):
+    return line.__contains__(':')
 
 def get_property_line(line):
     split = line.index(':')
@@ -28,14 +58,6 @@ def is_chord_line(line):
     copy = re.sub('[A-Gm0-9 ]', '', copy)
     new_len = len(copy)
     return new_len < orig_len/2
-
-def new_nonempty_line():
-    line = None
-    while True:
-        line = input()
-        if not is_empty_line(line):
-            break
-    return line
 
 class Section:
     def __init__(self, name):
@@ -119,6 +141,9 @@ def print_parse_error(song):
     html_string = []
     html_string.append('<html>')
     html_string.append(song.error)
+    html_string.append('<pre>')
+    html_string.append(inputstream.get_all_input())
+    html_string.append('</pre>')
     html_string.append('</html>')
     return '\n'.join(html_string)
 
@@ -148,28 +173,32 @@ def song_to_html(song):
 def parse_song_from_tab():
     song = Song()
     try:
+        line = inputstream.next_line()
         # process properties until newline
         while True:
-            line = input()
-            if is_empty_line(line):
+            while is_empty_line(line):
+                line = inputstream.next_line()
+            if not is_property_line(line):
                 break
             (key, value) = get_property_line(line)
             song.add_property(key, value)
+            line = inputstream.next_line()
         # process song sections (verse, chorus, etc.)
-        line = new_nonempty_line()
         while True:
+            while is_empty_line(line):
+                line = inputstream.next_line()
             # process section name
             (name, optional_chords) = get_section_heading(line)
             repeat_key = 'repeat '
             if name[:len(repeat_key)] == repeat_key:
                 name = name[len(repeat_key):]
                 if song.repeat_section(name):
-                    line = new_nonempty_line()
+                    line = inputstream.next_line()
                     continue
             song.add_section(name, optional_chords)
             # process section text
             while True:
-                line = input()
+                line = inputstream.next_line()
                 if starts_with_heading(line):
                     break
                 if is_chord_line(line):
@@ -177,18 +206,21 @@ def parse_song_from_tab():
                     song.add_line(line)
                 else:
                     song.add_line(line)
-    except EOFError:
+    except ConError:
         # remove extra newlines at the end
         if len(song.sections) != 0:
             while len(song.sections[-1].lines) != 0 and len(song.sections[-1].lines[-1]) == 0:
                 song.sections[-1].lines.pop()
-    except ValueError:
-        song.error = "could not parse correctly"
+    except ValueError as e:
+        song.error = f"could not parse correctly line {inputstream.idx}\n\n{traceback.format_exc()} {line}\n\n"
     return song
 
 def main():
     song = parse_song_from_tab()
     print(song_to_html(song))
+    if song.error is not None:
+        exit(24)
 
 if __name__ == '__main__':
     main()
+    exit(0)

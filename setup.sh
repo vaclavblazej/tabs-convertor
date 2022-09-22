@@ -16,11 +16,12 @@ cp -r template/* tabs-web/
 
 echo "converting tabs to html"
 for i in **/*.tab; do
-    echo "processing $i"
+    echo -n "processing $i : "
     source="$i"
     result="$(echo $(dirname "${i/tabs\//tabs-web\/}")/$(basename -s .tab "$i").html)"
     mkdir -p "$(dirname "$result")"
     ./code/convert.py < "$source" > "$result"
+    echo $?
 done
 
 substitute(){
@@ -60,9 +61,9 @@ for d in tabs/*/; do
     done
 done
 
-echo "committing and pushing the website"
-cd tabs-web
-git add .
-git commit -m "$(date +"%F")"
-git push
-cd ..
+# echo "committing and pushing the website"
+# cd tabs-web
+# git add .
+# git commit -m "$(date +"%F")"
+# git push
+# cd ..
